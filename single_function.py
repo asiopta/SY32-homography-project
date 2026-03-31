@@ -138,24 +138,38 @@ def coord_circle_center(masked_image):
     return np.mean(cols), np.mean(rows)
 
 
-def transformer(I, H, hw = (-1,-1), interp='linear'):
-  h = hw[0]
-  w = hw[1]
-  if (w <= 0 or h <= 0):
-    (h,w) = hw = I.shape[:2]
-  O = np.zeros((h,w)) # image de sortie
-  xx1, yy1 = np.meshgrid(np.arange(I.shape[1]), np.arange(I.shape[0]))
-  xx1 = xx1.flatten()
-  yy1 = yy1.flatten()
-  Hinv = np.linalg.inv(H)
-  xx2, yy2 = np.meshgrid(np.arange(O.shape[1]), np.arange(O.shape[0]))
-  xx2 = xx2.flatten()
-  yy2 = yy2.flatten()
-  xxyy2 = np.stack((xx2,yy2,np.ones((O.size))), axis=0)
-  xxyy = Hinv @ xxyy2
-  xxyy = np.stack((xxyy[0]/xxyy[2], xxyy[1]/xxyy[2]), axis=0)
-  O = griddata((xx1,yy1), I.flatten(), xxyy.T, method=interp, fill_value=0).reshape(O.shape)
-  return O
+def transformer(I, H, hw=(-1, -1), interp='linear'):
+    h, w = hw
+    if (w <= 0 or h <= 0):
+        h, w = I.shape[:2]
+    
+    # Initialize output image with the correct number of channels
+    if I.ndim == 3:
+        O = np.zeros((h, w, I.shape[2]))
+    else:
+        O = np.zeros((h, w))
+
+    # Prep coordinates
+    xx1, yy1 = np.meshgrid(np.arange(I.shape[1]), np.arange(I.shape[0]))
+    xx1, yy1 = xx1.flatten(), yy1.flatten()
+    
+    Hinv = np.linalg.inv(H)
+    xx2, yy2 = np.meshgrid(np.arange(w), np.arange(h))
+    xx2, yy2 = xx2.flatten(), yy2.flatten()
+    
+    xxyy2 = np.stack((xx2, yy2, np.ones(xx2.size)), axis=0)
+    xxyy = Hinv @ xxyy2
+    xxyy = np.stack((xxyy[0]/xxyy[2], xxyy[1]/xxyy[2]), axis=0)
+
+    # Apply interpolation channel by channel if RGB
+    if I.ndim == 3:
+        for i in range(I.shape[2]):
+            channel = I[:, :, i].flatten()
+            O[:, :, i] = griddata((xx1, yy1), channel, xxyy.T, method=interp, fill_value=0).reshape(h, w)
+    else:
+        O = griddata((xx1, yy1), I.flatten(), xxyy.T, method=interp, fill_value=0).reshape(h, w)
+        
+    return O
 
 
 
@@ -164,7 +178,7 @@ if __name__ == "__main__":
 
     fennec = skimage.io.imread("fennec.jpg")
     #for img in img_paths:
-    img = img_paths[190]
+    img = img_paths[1]
     img_test = skimage.io.imread(img)
 
     white_paper_mask = detect_inside_paper(img_test)
@@ -212,26 +226,5 @@ if __name__ == "__main__":
     plt.imshow(result)
     plt.legend()
     plt.show()
-
-
-    '''
-    plt.figure()
-    plt.imshow(fennec_homographie, cmap='gray')
-    plt.scatter(coinsO[:, 0], coinsO[:, 1], color='red', marker='o', s=50, label='Selected Points')
-    plt.legend()
-    plt.show()
-
-    plt.plot()
-    plt.imshow(white_paper_mask)
-
-    plt.scatter(yx, yy, color='black', marker='x', s=30)
-    plt.scatter(rx, ry, color='black', marker='x', s=30)
-    plt.scatter(gx, gy, color='black', marker='x', s=30)
-    plt.scatter(bx, by, color='black', marker='x', s=30)
-    
-
-    plt.show()
-    '''
-
 
 
