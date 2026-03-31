@@ -127,7 +127,7 @@ def coord_circle_center(masked_image):
     # Keep only the largest connected region to ignore noise
     labeled = skimage.measure.label(non_black_mask)
     if labeled.max() == 0:
-        return None
+        return None, None
     
     # Find the largest region
     region_sizes = np.bincount(labeled.flat)[1:]  # skip background (0)
@@ -172,6 +172,9 @@ def transformer(I, H, hw=(-1, -1), interp='linear'):
     return O
 
 
+def determine_last_coord():
+    print()
+
 
 if __name__ == "__main__":
     img_paths = get_png_files("./seq1")
@@ -183,7 +186,12 @@ if __name__ == "__main__":
 
     white_paper_mask = detect_inside_paper(img_test)
 
+    plt.figure()
+    plt.imshow(white_paper_mask)
+    plt.legend()
+    plt.show()
     
+    '''
     #yellow
     yellow_mask = detect_color(white_paper_mask.copy() , 'y')
     yx, yy = coord_circle_center(yellow_mask)
@@ -213,6 +221,11 @@ if __name__ == "__main__":
                      [bx, by]]
     )
 
+    for i in range( len(coinsO)):
+        if coinsO[i] == [None, None]:
+            print()
+            determine_last_coord()
+
     tform = skimage.transform.estimate_transform('projective', coinsI, coinsO)
     H = tform.params
 
@@ -226,5 +239,5 @@ if __name__ == "__main__":
     plt.imshow(result)
     plt.legend()
     plt.show()
-
+    '''
 
