@@ -38,9 +38,9 @@ ffmpeg -framerate 10 -i seq_%03d.png -c:v libx264rgb -crf 18 output.mp4
 
 * consider how to calculate the position of the 4th circle, if we fail to detect one
   * either predict the coordinations of the 4th circle using the paper edges (the approach used for now)
-  * * detect the edge (OK)
-  * * calculate a vector of the edge (OK-ish)
-  * * apply the edges to the circles and calculate intersection to find last coordinate (TO DO)
+    * detect the edge (OK)
+    * calculate a vector of the edge (OK-ish)
+    * apply the edges to the circles and calculate intersection to find last coordinate (TO DO)
 
   * or, use the coordinates of the circles in the preceding photo, approximate the tranformation necessry to go from the last picture coordinates to the new one(for the 3 visible circles), and apply the same transformation to the last circle
 k
