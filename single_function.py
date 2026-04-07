@@ -186,10 +186,14 @@ if __name__ == "__main__":
 
     white_paper_mask = detect_inside_paper(img_test)
 
+    # show
     plt.figure()
     plt.imshow(white_paper_mask)
     plt.legend()
     plt.show()
+
+    #save 
+    skimage.io.imsave("white_paper.png", white_paper_mask)
     
     '''
     #yellow
