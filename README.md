@@ -31,6 +31,8 @@ ffmpeg -framerate 10 -i seq_%03d.png -c:v libx264rgb -crf 18 output.mp4
     * to do so, detect the edges of the paper and use it to calculate a vector
     * the intersection of the vectors of 2 edges, applied from the other 2 circles closest, is the coord of the 4th circle
 
+* apply homography to the 4 coordinates
+
 
 **Next steps**:
 * consider if we'll apply color detection to every picture of the video

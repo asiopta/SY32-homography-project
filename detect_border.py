@@ -54,6 +54,14 @@ import skimage.transform
 import skimage.feature
 import matplotlib.pyplot as plt
 
+def deduce_border_direction_to_find(dict_coord_centers):
+    '''
+    (None, None)
+    '''
+    
+    return 0
+
+
 def get_edge_vector(image_path: str):
     '''
     Given an edge-detected image (output of detect_specific_borders),
@@ -113,6 +121,22 @@ if __name__ == "__main__":
     image_path = "white_paper.png"
     img = skimage.io.imread(image_path)
     
+    # Convert to grayscale
+    if img.shape[-1] == 4:
+        img = img[:, :, :3]
+    gray = skimage.color.rgb2gray(img)
+
+    # Apply Sobel
+    edges = skimage.filters.sobel(gray)
+
+    # Display
+    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+    axes[0].imshow(img)
+    axes[0].set_title("Original")
+    axes[1].imshow(edges, cmap="gray")
+    axes[1].set_title("Sobel edges")
+    plt.tight_layout()
+    plt.show()
     '''
     # Run the function
     direction = "B"
@@ -121,8 +145,10 @@ if __name__ == "__main__":
     '''
 
     # Example usage
-    p1, p2 = get_edge_vector("page_edges_B.png")
-    l1, l2 = get_edge_vector("page_edges_L.png")
+    #p1, p2 = get_edge_vector("page_edges_B.png")
+    #l1, l2 = get_edge_vector("page_edges_L.png")
+
+    #detect_specific_borders("page_edges_B.png", "L")
 
 
 
