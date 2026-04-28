@@ -67,6 +67,12 @@ def detect_inside_paper(img):
 
     white_paper_masked = img.copy()
     white_paper_masked[~white_paper_mask] = 0
+
+    plt.figure()
+    plt.imshow(white_paper_masked)
+    plt.title("Detected paper area")
+    plt.show()
+
     return white_paper_masked
 
 
@@ -78,6 +84,7 @@ def detect_color(img, color: str):
     It detects the color in the image and return a mask containing only the specified color
     '''
     #retrieve image
+    img = img.copy()
     img_hsv = skimage.color.rgb2hsv(img)
 
     # get the hsv values of the color we wish to detect
@@ -91,7 +98,7 @@ def detect_color(img, color: str):
     (h, s, v) = hsv_values.get(color, "error")
 
     # Tolerance for each channel
-    H_TOL = 0.01
+    H_TOL = 0.03
     S_TOL = 0.15
     V_TOL = 0.15
 
@@ -109,11 +116,16 @@ def detect_color(img, color: str):
 
     combined_mask = h_mask & s_mask & v_mask
 
-    selem = morphology.disk(50)
+    selem = morphology.disk(5)
     combined_mask = skimage.morphology.closing(combined_mask, selem)
 
     # Apply mask: keep original pixels where mask is True, else black
     img[~combined_mask] = 0
+
+    plt.figure()
+    plt.imshow(img)
+    plt.title(f"Mask for color '{color}'")
+    plt.show()
         
     return img
 
@@ -133,6 +145,12 @@ def coord_circle_center(masked_image):
     # Find the largest region
     region_sizes = np.bincount(labeled.flat)[1:]  # skip background (0)
     largest_label = np.argmax(region_sizes) + 1
+    largest_size = region_sizes[largest_label - 1]
+
+    # Reject if the largest region is too small
+    if largest_size < 200:  # threshold can be adjusted based on expected size of the color area
+        return None, None
+
     largest_region = (labeled == largest_label)
     
     rows, cols = np.where(largest_region)
@@ -184,6 +202,9 @@ def predict_missing_coordinate(dict_coord_curr_image, dict_coords_prev_image):
 
     if missing_color is None:
         raise ValueError("No missing coordinate found in dict_coord_curr_image")
+    
+    if dict_coords_prev_image.get(missing_color) == (None, None):
+        raise ValueError("Cannot predict missing coordinate because it is also missing in dict_coords_prev_image")
 
     # Step 2: build src/dst arrays from the 3 known matched points
     src_points = []
@@ -200,70 +221,79 @@ def predict_missing_coordinate(dict_coord_curr_image, dict_coords_prev_image):
     dst = np.array(dst_points, dtype=float)
 
     # Step 3: estimate affine transform
-    tform = AffineTransform()
-    tform.estimate(src, dst)
+    tform = AffineTransform.from_estimate(src, dst)
 
     # Step 4: apply to the 4th point from the previous image
     p4 = np.array([dict_coords_prev_image[missing_color]], dtype=float)
     p4_transformed = tform(p4)
 
     last_point_coord = (p4_transformed[0][0], p4_transformed[0][1])
+    dict_coord_curr_image[missing_color] = last_point_coord
 
-    return last_point_coord
+    #print(f"Predicted missing coordinate for color '{missing_color}': {last_point_coord}")
+    print(f"Updated dict_coord_curr_image: {dict_coord_curr_image}")
+
+    return dict_coord_curr_image
 
 
 
 
-def apply_homography_single_image(fennec, img_base, dict_coords_prev_image):
+def apply_homography_single_image(fennec, img_base, dict_coords_prev_image = {}):
     #detect whiter paper
     white_paper_mask = detect_inside_paper(img_base)
 
     #detect colors and the coordinates of the center
 
     #yellow
-    yellow_mask = detect_color(white_paper_mask.copy() , 'y')
+    yellow_mask = detect_color(white_paper_mask, 'y')
     yx, yy = coord_circle_center(yellow_mask)
 
     #red
-    red_mask = detect_color(white_paper_mask.copy() , 'r')
+    red_mask = detect_color(white_paper_mask, 'r')
     rx, ry = coord_circle_center(red_mask)
 
     #green
-    green_mask = detect_color(white_paper_mask.copy() , 'g')
+    green_mask = detect_color(white_paper_mask, 'g')
     gx, gy = coord_circle_center(green_mask)
 
     #blue
-    blue_mask = detect_color(white_paper_mask.copy() , 'b')
+    blue_mask = detect_color(white_paper_mask, 'b')
     bx, by = coord_circle_center(blue_mask)
 
-    dict_coord_centers = {
-        'y': (yx, yy),
-        'r': (rx, ry),
-        'g': (gx, gy),
-        'b': (bx, by)
+    dict_coord_curr_image = {
+        'y': (yx, yy) if yx is not None else (None, None),
+        'r': (rx, ry) if rx is not None else (None, None),
+        'g': (gx, gy) if gx is not None else (None, None),
+        'b': (bx, by) if bx is not None else (None, None)
     }
 
-    # if we fail a detect a color, we deduce it from the other 3 and the previous coordinates
+    print(dict_coord_curr_image)
 
+    # if we fail a detect a color, we deduce it from the other 3 and the previous coordinates
+    for color, coords in dict_coord_curr_image.items():
+        if coords == (None, None):
+            dict_coord_curr_image = predict_missing_coordinate(dict_coord_curr_image, dict_coords_prev_image)
+            break
 
     # coins
     coinsI = np.array([[0, 0], [WIDHT_FENNEC, 0], [WIDHT_FENNEC, HEIGHT_FENNEC], [0, HEIGHT_FENNEC]])
+    # order:            TL              TR                      BR                        BL
 
+    coinsO = np.array(list(dict_coord_curr_image.values()))
+    # order:  y, r, g, b  ← whatever order the dict was defined in
+
+    coinsO = np.array(list(dict_coord_curr_image.values()))
+    '''
     coinsO = np.array([[yx, yy],
                      [rx, ry],
                      [gx, gy],
-                     [bx, by]]
-    )
-
-    for i in range( len(coinsO)):
-        if coinsO[i] == [None, None]:
-            print()
-            determine_last_coord()
+                     [bx, by]])
+    '''
 
     tform = skimage.transform.estimate_transform('projective', coinsI, coinsO)
     H = tform.params
 
-    fennec_homographie = transform(fennec, H, hw = img_test.shape[:2], interp='linear')
+    fennec_homographie = transform(fennec, H, hw = img_base.shape[:2], interp='linear')
 
     result = img_base.copy()
     mask = (fennec_homographie[:, :, 0] != 0)
@@ -271,96 +301,32 @@ def apply_homography_single_image(fennec, img_base, dict_coords_prev_image):
 
     plt.figure()
     plt.imshow(result)
-    plt.legend()
     plt.show()
 
-
-def determine_last_coord():
-    print()
+    return dict_coord_curr_image
 
 
 if __name__ == "__main__":
 
-    dict_coords_prev_image =  {}
+    dict_coords_prev_image =  {
+        'y': (None, None),
+        'r': (None, None),
+        'g': (None, None),
+        'b': (None, None)
+    }
     #import images and define constants
-    img_paths = get_png_files("./seq1")
+    img_paths = get_png_files("./seq4b")
 
     fennec = skimage.io.imread("fennec.jpg")
     HEIGHT_FENNEC, WIDHT_FENNEC = fennec.shape[:2]
     coinsI = np.array([[0, 0], [WIDHT_FENNEC, 0], [WIDHT_FENNEC, HEIGHT_FENNEC], [0, HEIGHT_FENNEC]])
 
-    #for img in img_paths:
-    img = img_paths[1]
-    img_test = skimage.io.imread(img)
+    for img in img_paths:
+        print(f"Processing {img}...")
+        img_base = skimage.io.imread(img)
 
-    white_paper_mask = detect_inside_paper(img_test)
 
-    '''
-    # show
-    plt.figure()
-    plt.imshow(white_paper_mask)
-    plt.legend() 
-    plt.show()
-
-    #save 
-    skimage.io.imsave("white_paper.png", white_paper_mask)
-    '''
-    
-    #yellow
-    yellow_mask = detect_color(white_paper_mask.copy() , 'y')
-    yx, yy = coord_circle_center(yellow_mask)
-
-    #red
-    red_mask = detect_color(white_paper_mask.copy() , 'r')
-    rx, ry = coord_circle_center(red_mask)
-
-    #green
-    green_mask = detect_color(white_paper_mask.copy() , 'g')
-    gx, gy = coord_circle_center(green_mask)
-
-    #blue
-    blue_mask = detect_color(white_paper_mask.copy() , 'b')
-    bx, by = coord_circle_center(blue_mask)
-
-    dict_coord_centers = {
-        'y': (yx, yy),
-        'r': (rx, ry),
-        'g': (gx, gy),
-        'b': (bx, by)
-    }
-    
-
-    # coins
-     
-    height, width = fennec.shape[:2]
-
-    coinsI = np.array([[0, 0], [width, 0], [width, height], [0, height]])
-
-    coinsO = np.array([[yx, yy],
-                     [rx, ry],
-                     [gx, gy],
-                     [bx, by]]
-    )
-
-    for i in range( len(coinsO)):
-        if coinsO[i] == [None, None]:
-            print()
-            determine_last_coord()
-
-    tform = skimage.transform.estimate_transform('projective', coinsI, coinsO)
-    H = tform.params
-
-    fennec_homographie = transform(fennec, H, hw = img_test.shape[:2], interp='linear')
-
-    result = img_test.copy()
-    mask = (fennec_homographie[:, :, 0] != 0)
-    result[mask] = fennec_homographie[mask]
-
-    plt.figure()
-    plt.imshow(result)
-    plt.legend()
-    plt.show()
-    
-
-    dict_coords_prev_image = dict_coord_centers
+        dict_coord_curr_image = apply_homography_single_image(fennec, img_base, dict_coords_prev_image)
+            
+        dict_coords_prev_image = dict_coord_curr_image
 
