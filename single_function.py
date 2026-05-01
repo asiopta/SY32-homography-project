@@ -68,11 +68,12 @@ def detect_inside_paper(img):
     white_paper_masked = img.copy()
     white_paper_masked[~white_paper_mask] = 0
 
+    '''
     plt.figure()
     plt.imshow(white_paper_masked)
     plt.title("Detected paper area")
     plt.show()
-
+    '''
     return white_paper_masked
 
 
@@ -122,11 +123,12 @@ def detect_color(img, color: str):
     # Apply mask: keep original pixels where mask is True, else black
     img[~combined_mask] = 0
 
+    '''
     plt.figure()
     plt.imshow(img)
     plt.title(f"Mask for color '{color}'")
     plt.show()
-        
+    '''    
     return img
 
 
@@ -238,7 +240,10 @@ def predict_missing_coordinate(dict_coord_curr_image, dict_coords_prev_image):
 
 
 
-def apply_homography_single_image(fennec, img_base, dict_coords_prev_image = {}):
+def apply_homography_single_image(fennec, img_path, dict_coords_prev_image = {}):
+
+    img_base = skimage.io.imread(img_path)
+
     #detect whiter paper
     white_paper_mask = detect_inside_paper(img_base)
 
@@ -282,8 +287,8 @@ def apply_homography_single_image(fennec, img_base, dict_coords_prev_image = {})
     coinsO = np.array(list(dict_coord_curr_image.values()))
     # order:  y, r, g, b  ← whatever order the dict was defined in
 
-    coinsO = np.array(list(dict_coord_curr_image.values()))
     '''
+    coinsO = np.array(list(dict_coord_curr_image.values()))
     coinsO = np.array([[yx, yy],
                      [rx, ry],
                      [gx, gy],
@@ -299,9 +304,14 @@ def apply_homography_single_image(fennec, img_base, dict_coords_prev_image = {})
     mask = (fennec_homographie[:, :, 0] != 0)
     result[mask] = fennec_homographie[mask]
 
+    #save the result of the homography for each image
+    '''
     plt.figure()
     plt.imshow(result)
     plt.show()
+    ''' 
+    result_path = os.path.join("results", img_path.replace(".png", "_result.png"))
+    skimage.io.imsave(result_path, result)
 
     return dict_coord_curr_image
 
@@ -315,18 +325,16 @@ if __name__ == "__main__":
         'b': (None, None)
     }
     #import images and define constants
-    img_paths = get_png_files("./seq4b")
+    img_paths = get_png_files("./seq4")
 
     fennec = skimage.io.imread("fennec.jpg")
     HEIGHT_FENNEC, WIDHT_FENNEC = fennec.shape[:2]
     coinsI = np.array([[0, 0], [WIDHT_FENNEC, 0], [WIDHT_FENNEC, HEIGHT_FENNEC], [0, HEIGHT_FENNEC]])
 
-    for img in img_paths:
-        print(f"Processing {img}...")
-        img_base = skimage.io.imread(img)
-
-
-        dict_coord_curr_image = apply_homography_single_image(fennec, img_base, dict_coords_prev_image)
+    for img_path in img_paths:
+        print(f"Processing {img_path}...")
+        
+        dict_coord_curr_image = apply_homography_single_image(fennec, img_path, dict_coords_prev_image)
             
         dict_coords_prev_image = dict_coord_curr_image
 
