@@ -5,7 +5,6 @@ import matplotlib.pyplot as plt
 import os
 from scipy.interpolate import griddata
 from skimage.transform import AffineTransform
-#import cv2
 
 
 def get_png_files(folder_path):
@@ -17,31 +16,6 @@ def get_png_files(folder_path):
         for f in sorted(os.listdir(folder_path))
         if f.endswith(".png")
     ]
-
-def undistort(img):
-    # Intrinsic matrix
-    K = np.array([[533.75781056,   0.,         386.78762246],
-                [  0.,         534.74578856, 275.71106165],
-                [  0.,           0.,           1.        ]])
-
-    # Distortion coefficients (k1, k2, p1, p2, k3)
-    dist = np.array([-3.33535276e-01,  1.65338810e-01,
-                    -2.90030682e-04, -3.97059918e-04,
-                    -4.70631813e-02])
-    
-    h, w = img.shape[:2]
-
-    # Compute optimal new camera matrix (crops black borders)
-    newCameraMatrix, roi = cv2.getOptimalNewCameraMatrix(K, dist, (w, h), alpha=0)
-
-    # Undistort
-    dst = cv2.undistort(img, K, dist, None, newCameraMatrix)
-
-    # crop the image
-    x, y, w, h = roi
-    dst = dst[y:y+h, x:x+w]
-
-    return dst
 
 def detect_inside_paper(img):
     '''
@@ -61,8 +35,7 @@ def detect_inside_paper(img):
         (0.3167, 0.0429, 0.9137),
         (0.3519, 0.0388, 0.9098),
         (0.4048, 0.0314, 0.8745),
-        (0.5909, 0.0474, 0.9098),
-        [2.22222222e-01, 1.68539326e-02, 1.92987987e-17]
+        (0.5909, 0.0474, 0.9098)
     ]
 
     # Build a mask for each HSV point and combine them with OR
@@ -83,28 +56,28 @@ def detect_inside_paper(img):
 
     # Morphological closing to fill holes inside the paper
     # disk size controls how aggressively gaps are filled, increase if needed
-    selem = morphology.disk(15)
-    #white_paper_mask = skimage.morphology.closing(combined_mask, selem)
-    white_paper_mask = skimage.morphology.dilation(combined_mask, selem)
-
-    #white_paper_mask = combined_mask
+    selem = morphology.disk(5)
+    white_paper_mask = skimage.morphology.closing(combined_mask, selem)
 
     # Fill any remaining holes completely
-    #white_paper_mask = morphology.remove_small_holes(white_paper_mask, max_size=50000)
+    white_paper_mask = morphology.remove_small_holes(white_paper_mask, max_size=5000)
 
     # Remove small noisy blobs outside the paper
     #white_paper_mask = morphology.remove_small_objects(white_paper_mask, max_size=5000)
 
-    white_paper_masked = img.copy()
-    white_paper_masked[~white_paper_mask] = 0
+    white_paper_only = img.copy()
+    non_white_paper_only = img.copy()
 
-    
+    white_paper_only[~white_paper_mask] = 0
+    non_white_paper_only[white_paper_mask] = 0
+
+    '''
     plt.figure()
-    plt.imshow(white_paper_masked)
+    plt.imshow(white_paper_mask)
     plt.title("Detected paper area")
     plt.show()
-    
-    return white_paper_masked
+    '''
+    return white_paper_only, non_white_paper_only
 
 
 def detect_color(img, color: str):
@@ -130,9 +103,9 @@ def detect_color(img, color: str):
     (h, s, v) = hsv_values.get(color, "error")
 
     # Tolerance for each channel
-    H_TOL = 0.04
-    S_TOL = 0.2
-    V_TOL = 0.2
+    H_TOL = 0.03
+    S_TOL = 0.15
+    V_TOL = 0.15
 
     # Build per-channel masks
     s_mask = (img_hsv[:, :, 1] >= s - S_TOL) & (img_hsv[:, :, 1] <= s + S_TOL)
@@ -154,12 +127,12 @@ def detect_color(img, color: str):
     # Apply mask: keep original pixels where mask is True, else black
     img[~combined_mask] = 0
 
-    
+    '''
     plt.figure()
     plt.imshow(img)
     plt.title(f"Mask for color '{color}'")
     plt.show()
-    
+    '''
     return img
 
 
@@ -254,8 +227,6 @@ def predict_missing_coordinate(dict_coord_curr_image, dict_coords_prev_image):
     dst = np.array(dst_points, dtype=float)
 
     # Step 3: estimate affine transform
-    #tform = AffineTransform()
-    #tform.estimate(src, dst)
     tform = AffineTransform.from_estimate(src, dst)
 
     # Step 4: apply to the 4th point from the previous image
@@ -276,10 +247,9 @@ def predict_missing_coordinate(dict_coord_curr_image, dict_coords_prev_image):
 def apply_homography_single_image(fennec, img_path, dict_coords_prev_image = {}):
 
     img_base = skimage.io.imread(img_path)
-    #img_base = undistort(img_base)
 
     #detect whiter paper
-    white_paper_mask = detect_inside_paper(img_base)
+    white_paper_mask, non_white_paper_mask = detect_inside_paper(img_base)
 
     #detect colors and the coordinates of the center
 
@@ -334,16 +304,20 @@ def apply_homography_single_image(fennec, img_path, dict_coords_prev_image = {})
 
     fennec_homographie = transform(fennec, H, hw = img_base.shape[:2], interp='linear')
 
-    result = img_base.copy()
-    mask = (fennec_homographie[:, :, 0] != 0)
-    result[mask] = fennec_homographie[mask]
+    result = white_paper_mask.copy()
+    mask_homography = (fennec_homographie[:, :, 0] != 0)
+    white_paper_mask[mask_homography] = fennec_homographie[mask_homography]
+
+    non_white_paper_mask[non_white_paper_mask == 0] = white_paper_mask[non_white_paper_mask == 0]
+    result = non_white_paper_mask
+
 
     #save the result of the homography for each image
     '''
     plt.figure()
     plt.imshow(result)
     plt.show()
-    ''' 
+    '''
     result_path = os.path.join("results", img_path.replace(".png", "_result.png"))
     skimage.io.imsave(result_path, result)
 
@@ -351,7 +325,7 @@ def apply_homography_single_image(fennec, img_path, dict_coords_prev_image = {})
 
 
 if __name__ == "__main__":
-    '''
+    
     dict_coords_prev_image =  {
         'y': (None, None),
         'r': (None, None),
@@ -361,14 +335,14 @@ if __name__ == "__main__":
     '''
 
     dict_coords_prev_image = {
-        'y': (np.float64(460.7037037037037), np.float64(401.0740740740741)), 
-        'r': (np.float64(349.8859649122807), np.float64(205.17105263157896)), 
-        'g': (np.float64(463.56066945606693), np.float64(186.20502092050208)), 
-        'b': (np.float64(619.7947048345036), np.float64(388.86133451539354))
+        'y': (np.float64(482.3203883495146), np.float64(379.12268314210064)), 
+        'r': (np.float64(383.8636363636364), np.float64(170.05454545454546)), 
+        'g': (np.float64(501.9409282700422), np.float64(163.0928270042194)), 
+        'b': (np.float64(646.4597945647049), np.float64(383.8080825759477))
     }
-
+    '''
     #import images and define constants
-    img_paths = get_png_files("./seq4")
+    img_paths = get_png_files("./seq3b")
 
     fennec = skimage.io.imread("fennec.jpg")
     HEIGHT_FENNEC, WIDHT_FENNEC = fennec.shape[:2]
@@ -376,11 +350,12 @@ if __name__ == "__main__":
 
     for img_path in img_paths:
         # apply only starting from 126th image
-        first_image_number = 140
+        '''
+        first_image_number = 126
         image_number = int(os.path.basename(img_path).split(".")[0])
         if image_number < first_image_number:
             continue
-
+        '''
         print(f"Processing {img_path}...")
         
         dict_coord_curr_image = apply_homography_single_image(fennec, img_path, dict_coords_prev_image)
