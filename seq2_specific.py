@@ -17,6 +17,7 @@ def get_png_files(folder_path):
         if f.endswith(".png")
     ]
 
+
 def detect_inside_paper(img):
     '''
     given an image, it detects a white paper and everything inside
@@ -35,7 +36,8 @@ def detect_inside_paper(img):
         (0.3167, 0.0429, 0.9137),
         (0.3519, 0.0388, 0.9098),
         (0.4048, 0.0314, 0.8745),
-        (0.5909, 0.0474, 0.9098)
+        (0.5909, 0.0474, 0.9098),
+        [2.22222222e-01, 1.68539326e-02, 1.92987987e-17]
     ]
 
     # Build a mask for each HSV point and combine them with OR
@@ -56,31 +58,31 @@ def detect_inside_paper(img):
 
     # Morphological closing to fill holes inside the paper
     # disk size controls how aggressively gaps are filled, increase if needed
-    selem = morphology.disk(5)
-    white_paper_mask = skimage.morphology.closing(combined_mask, selem)
+    selem = morphology.disk(15)
+    #white_paper_mask = skimage.morphology.closing(combined_mask, selem)
+    white_paper_mask = skimage.morphology.dilation(combined_mask, selem)
+
+    #white_paper_mask = combined_mask
 
     # Fill any remaining holes completely
-    white_paper_mask = morphology.remove_small_holes(white_paper_mask, max_size=5000)
+    #white_paper_mask = morphology.remove_small_holes(white_paper_mask, max_size=50000)
 
     # Remove small noisy blobs outside the paper
     #white_paper_mask = morphology.remove_small_objects(white_paper_mask, max_size=5000)
 
-    white_paper_only = img.copy()
-    non_white_paper_only = img.copy()
-
-    white_paper_only[~white_paper_mask] = 0
-    non_white_paper_only[white_paper_mask] = 0
+    white_paper_masked = img.copy()
+    white_paper_masked[~white_paper_mask] = 0
 
     '''
     plt.figure()
-    plt.imshow(white_paper_mask)
+    plt.imshow(white_paper_masked)
     plt.title("Detected paper area")
     plt.show()
     '''
-    return white_paper_only, non_white_paper_only
+    return white_paper_masked
 
 
-def detect_color(img, color: str):
+def detect_red(img):
     '''
     given an image and the first letter of one of these colors:
     yellow, red, green, blue
@@ -94,18 +96,15 @@ def detect_color(img, color: str):
 
     # get the hsv values of the color we wish to detect
     hsv_values = {
-        'y': (0.0966, 0.5245, 0.8000), #yellow
-        'r': (0.9931, 0.6621, 0.5686), #red
-        'g': (0.5333, 0.2083, 0.1882), #green
-        'b': (0.6712, 0.4205, 0.3451) #blue
+        'r': (0.9931, 0.6621, 0.5686)
     }
 
-    (h, s, v) = hsv_values.get(color, "error")
+    (h, s, v) = hsv_values.get('r', "error")
 
     # Tolerance for each channel
-    H_TOL = 0.03
-    S_TOL = 0.15
-    V_TOL = 0.15
+    H_TOL = 0.04
+    S_TOL = 0.2
+    V_TOL = 0.2
 
     # Build per-channel masks
     s_mask = (img_hsv[:, :, 1] >= s - S_TOL) & (img_hsv[:, :, 1] <= s + S_TOL)
@@ -130,37 +129,131 @@ def detect_color(img, color: str):
     '''
     plt.figure()
     plt.imshow(img)
-    plt.title(f"Mask for color '{color}'")
+    plt.title(f"Mask for color red")
     plt.show()
     '''
     return img
 
 
-def coord_circle_center(masked_image):
+'''
+def assign_coordinates_to_corners(coords_circles_centers, dict_coords_prev_image):
+    
+    takes as input:
+      -the result of coord_circle_center(): array of 4 (x,y) coordinates
+      -and the dict of the previous image with the corner as key and the coordinate as value
+
+    idea:
+        if dict_coords_prev_image is empty ( the values of each corner are (None, None) ), 
+        we can determin the order of the corners in the first image by looking at the relative position of the 4 detected coordinates,
+        for example the one with the smallest x and y will be the top left corner, the one with the smallest x and biggest y will be the bottom left corner, etc...
+        
+        if dict_coords_prev_image is not empty, we can use the previous coordinates to assign the corners in the current image by looking at the distance between the detected coordinates and the previous coordinates, 
+        for example the coordinate that is closest to the previous top left corner will be assigned to the top left corner in the current image, etc...
+
+        result:
+        a dictionary with the corner as key and the coordinate as value, for example:
+        res = {
+            'TL': (tl_x, tl_y) ,
+            'TR': (tr_x, tr_y) ,
+            'BR': (br_x, br_y) ,
+            'BL': (bl_x, bl_y)
+        }
+    
+    
+
+    res = {}
+
+    return res
+
+'''
+
+def coord_circle_center(masked_image, min_area=100):
     '''
     given a mask containing only the wanted color/area,
-    return the center 
+    return the centers of the 4 largest regions
     '''
     non_black_mask = np.any(masked_image != 0, axis=2)
     
-    # Keep only the largest connected region to ignore noise
     labeled = skimage.measure.label(non_black_mask)
     if labeled.max() == 0:
-        return None, None
+        return []
     
-    # Find the largest region
     region_sizes = np.bincount(labeled.flat)[1:]  # skip background (0)
-    largest_label = np.argmax(region_sizes) + 1
-    largest_size = region_sizes[largest_label - 1]
-
-    # Reject if the largest region is too small
-    if largest_size < 100:  # threshold can be adjusted based on expected size of the color area
-        return None, None
-
-    largest_region = (labeled == largest_label)
     
-    rows, cols = np.where(largest_region)
-    return np.mean(cols), np.mean(rows)
+    # Get up to 4 largest regions above min_area threshold
+    valid_labels = np.where(region_sizes >= min_area)[0] + 1
+    if len(valid_labels) == 0:
+        return []
+    
+    # Sort by size descending, take top 4
+    valid_labels = sorted(valid_labels, key=lambda l: region_sizes[l-1], reverse=True)[:4]
+
+    results = []
+    for label in valid_labels:
+        region = (labeled == label)
+        rows, cols = np.where(region)
+        center = (np.mean(cols), np.mean(rows))
+        results.append(center)
+
+    return results
+
+
+def assign_coordinates_to_corners(coords_circles_centers, dict_coords_prev_image):
+    '''
+    takes as input:
+      - the result of coord_circle_center(): array of 4 (x,y) coordinates
+      - and the dict of the previous image with the corner as key and the coordinate as value
+    '''
+
+    res = {}
+
+    if len(coords_circles_centers) == 0:
+        return {'TL': (None, None), 'TR': (None, None), 'BR': (None, None), 'BL': (None, None)}
+
+    coords = np.array(coords_circles_centers)  # shape (N, 2), each row is (x, y)
+
+    all_none = all(v == (None, None) for v in dict_coords_prev_image.values())
+
+    if all_none:
+        # --- First frame: assign by relative position ---
+        # TL = smallest x+y, TR = smallest y but largest x, etc.
+        scores = {
+            'TL': coords[:, 0] + coords[:, 1],          # min x+y
+            'TR': -coords[:, 0] + coords[:, 1],         # min -x+y  (large x, small y)
+            'BR': -(coords[:, 0] + coords[:, 1]),        # max x+y
+            'BL': coords[:, 0] - coords[:, 1],           # min x-y  (small x, large y)
+        }
+
+        assigned = set()
+        for corner, score in scores.items():
+            # Pick the best unassigned index
+            sorted_indices = np.argsort(score)
+            for idx in sorted_indices:
+                if idx not in assigned:
+                    res[corner] = (coords[idx, 0], coords[idx, 1])
+                    assigned.add(idx)
+                    break
+
+    else:
+        # --- Subsequent frames: assign by proximity to previous coordinates ---
+        assigned_coords = set()
+        for corner, prev_coord in dict_coords_prev_image.items():
+            if prev_coord == (None, None):
+                res[corner] = (None, None)
+                continue
+
+            prev = np.array(prev_coord)
+            distances = np.linalg.norm(coords - prev, axis=1)
+
+            # Pick closest unassigned coordinate
+            sorted_indices = np.argsort(distances)
+            for idx in sorted_indices:
+                if idx not in assigned_coords:
+                    res[corner] = (coords[idx, 0], coords[idx, 1])
+                    assigned_coords.add(idx)
+                    break
+
+    return res
 
 
 def transform(I, H, hw=(-1, -1), interp='linear'):
@@ -227,6 +320,8 @@ def predict_missing_coordinate(dict_coord_curr_image, dict_coords_prev_image):
     dst = np.array(dst_points, dtype=float)
 
     # Step 3: estimate affine transform
+    #tform = AffineTransform()
+    #tform.estimate(src, dst)
     tform = AffineTransform.from_estimate(src, dst)
 
     # Step 4: apply to the 4th point from the previous image
@@ -247,77 +342,46 @@ def predict_missing_coordinate(dict_coord_curr_image, dict_coords_prev_image):
 def apply_homography_single_image(fennec, img_path, dict_coords_prev_image = {}):
 
     img_base = skimage.io.imread(img_path)
+    #img_base = undistort(img_base)
 
     #detect whiter paper
-    white_paper_mask, non_white_paper_mask = detect_inside_paper(img_base)
+    white_paper_mask = detect_inside_paper(img_base)
 
-    #detect colors and the coordinates of the center
-
-    #yellow
-    yellow_mask = detect_color(white_paper_mask, 'y')
-    yx, yy = coord_circle_center(yellow_mask)
-
-    #red
-    red_mask = detect_color(white_paper_mask, 'r')
-    rx, ry = coord_circle_center(red_mask)
-
-    #green
-    green_mask = detect_color(white_paper_mask, 'g')
-    gx, gy = coord_circle_center(green_mask)
-
-    #blue
-    blue_mask = detect_color(white_paper_mask, 'b')
-    bx, by = coord_circle_center(blue_mask)
-
-    dict_coord_curr_image = {
-        'y': (yx, yy) if yx is not None else (None, None),
-        'r': (rx, ry) if rx is not None else (None, None),
-        'g': (gx, gy) if gx is not None else (None, None),
-        'b': (bx, by) if bx is not None else (None, None)
-    }
-
+    #detect red circles and the coordinates of the centers
+    red_mask = detect_red(white_paper_mask)
+    coords_circles_centers = coord_circle_center(red_mask) #array of 4 (x,y) coordinates
+    dict_coord_curr_image = assign_coordinates_to_corners(coords_circles_centers, dict_coords_prev_image)
     print(dict_coord_curr_image)
 
+    '''
     # if we fail a detect a color, we deduce it from the other 3 and the previous coordinates
     for color, coords in dict_coord_curr_image.items():
         if coords == (None, None):
             dict_coord_curr_image = predict_missing_coordinate(dict_coord_curr_image, dict_coords_prev_image)
             break
-
+    '''
     # coins
     coinsI = np.array([[0, 0], [WIDHT_FENNEC, 0], [WIDHT_FENNEC, HEIGHT_FENNEC], [0, HEIGHT_FENNEC]])
     # order:            TL              TR                      BR                        BL
 
     coinsO = np.array(list(dict_coord_curr_image.values()))
-    # order:  y, r, g, b  ← whatever order the dict was defined in
-
-    '''
-    coinsO = np.array(list(dict_coord_curr_image.values()))
-    coinsO = np.array([[yx, yy],
-                     [rx, ry],
-                     [gx, gy],
-                     [bx, by]])
-    '''
+    # order:  TL, TR, BR, BL  
 
     tform = skimage.transform.estimate_transform('projective', coinsI, coinsO)
     H = tform.params
 
     fennec_homographie = transform(fennec, H, hw = img_base.shape[:2], interp='linear')
 
-    result = white_paper_mask.copy()
-    mask_homography = (fennec_homographie[:, :, 0] != 0)
-    white_paper_mask[mask_homography] = fennec_homographie[mask_homography]
-
-    non_white_paper_mask[non_white_paper_mask == 0] = white_paper_mask[non_white_paper_mask == 0]
-    result = non_white_paper_mask
-
+    result = img_base.copy()
+    mask = (fennec_homographie[:, :, 0] != 0)
+    result[mask] = fennec_homographie[mask]
 
     #save the result of the homography for each image
     '''
     plt.figure()
     plt.imshow(result)
     plt.show()
-    '''
+    ''' 
     result_path = os.path.join("results", img_path.replace(".png", "_result.png"))
     skimage.io.imsave(result_path, result)
 
@@ -327,22 +391,15 @@ def apply_homography_single_image(fennec, img_path, dict_coords_prev_image = {})
 if __name__ == "__main__":
     
     dict_coords_prev_image =  {
-        'y': (None, None),
-        'r': (None, None),
-        'g': (None, None),
-        'b': (None, None)
+        'TL': (None, None),
+        'TR': (None, None),
+        'BR': (None, None),
+        'BL': (None, None)
     }
-    '''
+    
 
-    dict_coords_prev_image = {
-        'y': (np.float64(482.3203883495146), np.float64(379.12268314210064)), 
-        'r': (np.float64(383.8636363636364), np.float64(170.05454545454546)), 
-        'g': (np.float64(501.9409282700422), np.float64(163.0928270042194)), 
-        'b': (np.float64(646.4597945647049), np.float64(383.8080825759477))
-    }
-    '''
     #import images and define constants
-    img_paths = get_png_files("./seq3b")
+    img_paths = get_png_files("./seq2")
 
     fennec = skimage.io.imread("fennec.jpg")
     HEIGHT_FENNEC, WIDHT_FENNEC = fennec.shape[:2]
@@ -351,7 +408,7 @@ if __name__ == "__main__":
     for img_path in img_paths:
         # apply only starting from 126th image
         '''
-        first_image_number = 126
+        first_image_number = 140
         image_number = int(os.path.basename(img_path).split(".")[0])
         if image_number < first_image_number:
             continue
@@ -362,36 +419,3 @@ if __name__ == "__main__":
             
         dict_coords_prev_image = dict_coord_curr_image
 
-
-
-
-# possible improvements:
-# - detect the hand and exclude it from the paper detection
-# and the re-add it later after doing the homography, so the image looks more natural around the edges of the hand
-
-
-def detect_hand(img):
-    """Detect skin-colored pixels (the hand) and return a mask"""
-    img_hsv = skimage.color.rgb2hsv(img[:, :, :3])
-    
-    # Skin tone in HSV — tune if needed
-    h_mask = (img_hsv[:, :, 0] >= 0.02) & (img_hsv[:, :, 0] <= 0.12)
-    s_mask = (img_hsv[:, :, 1] >= 0.2)  & (img_hsv[:, :, 1] <= 0.7)
-    v_mask = (img_hsv[:, :, 2] >= 0.35)
-
-    skin_mask = h_mask & s_mask & v_mask
-
-    # Clean up the mask
-    skin_mask = morphology.closing(skin_mask, morphology.disk(10))
-    skin_mask = morphology.remove_small_objects(skin_mask, min_size=500)
-
-    return skin_mask
-
-
-'''
-hand_mask = detect_hand(img_base)
-
-# Don't draw fennec where the hand is
-mask_homography = (fennec_homographie[:, :, 0] != 0) & ~hand_mask
-white_paper_mask[mask_homography] = fennec_homographie[mask_homography]
-'''
