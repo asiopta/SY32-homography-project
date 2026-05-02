@@ -56,11 +56,11 @@ def detect_inside_paper(img):
 
     # Morphological closing to fill holes inside the paper
     # disk size controls how aggressively gaps are filled, increase if needed
-    selem = morphology.disk(5)
+    selem = morphology.disk(25)
     white_paper_mask = skimage.morphology.closing(combined_mask, selem)
 
     # Fill any remaining holes completely
-    white_paper_mask = morphology.remove_small_holes(white_paper_mask, max_size=5000)
+    white_paper_mask = morphology.remove_small_holes(white_paper_mask, max_size=50000)
 
     # Remove small noisy blobs outside the paper
     #white_paper_mask = morphology.remove_small_objects(white_paper_mask, max_size=5000)
@@ -73,7 +73,7 @@ def detect_inside_paper(img):
 
     '''
     plt.figure()
-    plt.imshow(white_paper_mask)
+    plt.imshow(white_paper_only)
     plt.title("Detected paper area")
     plt.show()
     '''
@@ -325,7 +325,7 @@ def apply_homography_single_image(fennec, img_path, dict_coords_prev_image = {})
 
 
 if __name__ == "__main__":
-    
+    '''
     dict_coords_prev_image =  {
         'y': (None, None),
         'r': (None, None),
@@ -334,15 +334,8 @@ if __name__ == "__main__":
     }
     '''
 
-    dict_coords_prev_image = {
-        'y': (np.float64(482.3203883495146), np.float64(379.12268314210064)), 
-        'r': (np.float64(383.8636363636364), np.float64(170.05454545454546)), 
-        'g': (np.float64(501.9409282700422), np.float64(163.0928270042194)), 
-        'b': (np.float64(646.4597945647049), np.float64(383.8080825759477))
-    }
-    '''
-    #import images and define constants
-    img_paths = get_png_files("./seq3b")
+    dict_coords_prev_image = {'y': (np.float64(480.11360634081905), np.float64(422.5554821664465)), 'r': (np.float64(225.29638009049773), np.float64(217.7839366515837)), 'g': (np.float64(343.0112359550562), np.float64(149.81741573033707)), 'b': (np.float64(560.5923566878981), np.float64(304.5636942675159))}
+    img_paths = get_png_files("./seq3")
 
     fennec = skimage.io.imread("fennec.jpg")
     HEIGHT_FENNEC, WIDHT_FENNEC = fennec.shape[:2]
@@ -350,12 +343,12 @@ if __name__ == "__main__":
 
     for img_path in img_paths:
         # apply only starting from 126th image
-        '''
-        first_image_number = 126
+        
+        first_image_number = 158
         image_number = int(os.path.basename(img_path).split(".")[0])
         if image_number < first_image_number:
             continue
-        '''
+        
         print(f"Processing {img_path}...")
         
         dict_coord_curr_image = apply_homography_single_image(fennec, img_path, dict_coords_prev_image)
