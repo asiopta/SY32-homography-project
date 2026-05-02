@@ -18,6 +18,7 @@ def get_png_files(folder_path):
         if f.endswith(".png")
     ]
 
+'''
 def undistort(img):
     # Intrinsic matrix
     K = np.array([[533.75781056,   0.,         386.78762246],
@@ -42,7 +43,7 @@ def undistort(img):
     dst = dst[y:y+h, x:x+w]
 
     return dst
-
+'''
 def detect_inside_paper(img):
     '''
     given an image, it detects a white paper and everything inside
@@ -83,14 +84,14 @@ def detect_inside_paper(img):
 
     # Morphological closing to fill holes inside the paper
     # disk size controls how aggressively gaps are filled, increase if needed
-    selem = morphology.disk(15)
-    #white_paper_mask = skimage.morphology.closing(combined_mask, selem)
-    white_paper_mask = skimage.morphology.dilation(combined_mask, selem)
+    selem = morphology.disk(25)
+    white_paper_mask = skimage.morphology.closing(combined_mask, selem)
+    #white_paper_mask = skimage.morphology.dilation(combined_mask, selem)
 
     #white_paper_mask = combined_mask
 
     # Fill any remaining holes completely
-    #white_paper_mask = morphology.remove_small_holes(white_paper_mask, max_size=50000)
+    white_paper_mask = morphology.remove_small_holes(white_paper_mask, max_size=50000)
 
     # Remove small noisy blobs outside the paper
     #white_paper_mask = morphology.remove_small_objects(white_paper_mask, max_size=5000)
@@ -98,12 +99,12 @@ def detect_inside_paper(img):
     white_paper_masked = img.copy()
     white_paper_masked[~white_paper_mask] = 0
 
-    
+    '''
     plt.figure()
     plt.imshow(white_paper_masked)
     plt.title("Detected paper area")
     plt.show()
-    
+    '''
     return white_paper_masked
 
 
@@ -154,12 +155,12 @@ def detect_color(img, color: str):
     # Apply mask: keep original pixels where mask is True, else black
     img[~combined_mask] = 0
 
-    
+    '''
     plt.figure()
     plt.imshow(img)
     plt.title(f"Mask for color '{color}'")
     plt.show()
-    
+    '''
     return img
 
 
@@ -368,7 +369,7 @@ if __name__ == "__main__":
     }
 
     #import images and define constants
-    img_paths = get_png_files("./seq4")
+    img_paths = get_png_files("./seq5")
 
     fennec = skimage.io.imread("fennec.jpg")
     HEIGHT_FENNEC, WIDHT_FENNEC = fennec.shape[:2]
@@ -376,11 +377,12 @@ if __name__ == "__main__":
 
     for img_path in img_paths:
         # apply only starting from 126th image
+        '''
         first_image_number = 140
         image_number = int(os.path.basename(img_path).split(".")[0])
         if image_number < first_image_number:
             continue
-
+        '''
         print(f"Processing {img_path}...")
         
         dict_coord_curr_image = apply_homography_single_image(fennec, img_path, dict_coords_prev_image)
