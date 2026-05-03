@@ -63,8 +63,8 @@ def detect_inside_paper(img):
         (0.3519, 0.0388, 0.9098),
         (0.4048, 0.0314, 0.8745),
         (0.5909, 0.0474, 0.9098),
-        (5.20833333e-02, 1.15107914e-01, 1.50704102e-17),
-        (9.30555556e-01, 1.66666667e-01, 7.80625564e-18)
+        (5.20833333e-02, 1.15107914e-01, 1.50704102e-17)
+        #,(9.30555556e-01, 1.66666667e-01, 7.80625564e-18)
     ]
 
     # Build a mask for each HSV point and combine them with OR
@@ -85,8 +85,9 @@ def detect_inside_paper(img):
 
     # Morphological closing to fill holes inside the paper
     # disk size controls how aggressively gaps are filled, increase if needed
-    selem = morphology.disk(20)
+    selem = morphology.disk(10)
     white_paper_mask = skimage.morphology.closing(combined_mask, selem)
+    white_paper_mask = skimage.morphology.dilation(white_paper_mask, morphology.disk(5) )  # remove small noise
 
     # Keep only the largest connected region to ignore noise
     labeled = skimage.measure.label(white_paper_mask)
@@ -106,12 +107,12 @@ def detect_inside_paper(img):
     white_paper_only[~white_paper_mask] = 0
     non_white_paper_only[white_paper_mask] = 0
 
-    '''
+    
     plt.figure()
     plt.imshow(white_paper_only)
     plt.title("Detected paper area")
     plt.show()
-    '''
+    
     return white_paper_only, non_white_paper_only
 
 
