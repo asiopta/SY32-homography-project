@@ -96,7 +96,7 @@ def detect_inside_paper(img):
         white_paper_mask = largest_region
 
     # Fill any remaining holes completely
-    white_paper_mask = morphology.remove_small_holes(white_paper_mask, max_size=50000)
+    white_paper_mask = morphology.remove_small_holes(white_paper_mask, area_threshold=50000)
 
     # Remove small noisy blobs outside the paper
     #white_paper_mask = morphology.remove_small_objects(white_paper_mask, max_size=5000)
@@ -234,7 +234,7 @@ def transform(I, H, hw=(-1, -1), interp='linear'):
 
 
 
-def predict_missing_coordinate(dict_coord_curr_image, dict_coords_prev_image):
+#def predict_missing_coordinate(dict_coord_curr_image, dict_coords_prev_image):
     # Step 1: find the missing color (None, None) in current image
     missing_color = None
     for color, coords in dict_coord_curr_image.items():
@@ -265,7 +265,9 @@ def predict_missing_coordinate(dict_coord_curr_image, dict_coords_prev_image):
     # Step 3: estimate affine transform
     #tform = AffineTransform()
     #tform.estimate(src, dst)
-    tform = AffineTransform.from_estimate(src, dst)
+    #tform = AffineTransform.from_estimate(src, dst)
+    tform = AffineTransform()
+    tform.estimate(src, dst)
 
     # Step 4: apply to the 4th point from the previous image
     p4 = np.array([dict_coords_prev_image[missing_color]], dtype=float)
@@ -275,6 +277,53 @@ def predict_missing_coordinate(dict_coord_curr_image, dict_coords_prev_image):
     dict_coord_curr_image[missing_color] = last_point_coord
 
     #print(f"Predicted missing coordinate for color '{missing_color}': {last_point_coord}")
+    print(f"Updated dict_coord_curr_image: {dict_coord_curr_image}")
+
+    return dict_coord_curr_image
+
+
+def predict_missing_coordinate(dict_coord_curr_image, dict_coords_prev_image):
+
+    missing_colors = [color for color, coords in dict_coord_curr_image.items() if coords == (None, None)]
+
+    if not missing_colors :
+        return dict_coord_curr_image
+
+
+    if len(missing_colors) > 1:
+        for color in missing_colors:
+            dict_coord_curr_image[color] = dict_coords_prev_image[color]
+        return dict_coord_curr_image
+
+    missing_color = missing_colors[0]
+
+    src_points = []
+    dst_points = []
+
+    for color, dst_coords in dict_coord_curr_image.items():
+        if color == missing_color:
+            continue
+        src_points.append(dict_coords_prev_image[color])
+        dst_points.append(dst_coords)
+
+    src = np.array(src_points, dtype=float)
+    dst = np.array(dst_points, dtype=float)
+
+    # Step 3: estimate affine transform
+    # tform = AffineTransform()
+    # tform.estimate(src, dst)
+    # tform = AffineTransform.from_estimate(src, dst)
+    tform = AffineTransform()
+    tform.estimate(src, dst)
+
+    # Step 4: apply to the 4th point from the previous image
+    p4 = np.array([dict_coords_prev_image[missing_color]], dtype=float)
+    p4_transformed = tform(p4)
+
+    last_point_coord = (p4_transformed[0][0], p4_transformed[0][1])
+    dict_coord_curr_image[missing_color] = last_point_coord
+
+    # print(f"Predicted missing coordinate for color '{missing_color}': {last_point_coord}")
     print(f"Updated dict_coord_curr_image: {dict_coord_curr_image}")
 
     return dict_coord_curr_image
