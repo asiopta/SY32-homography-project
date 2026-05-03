@@ -59,6 +59,12 @@ def detect_inside_paper(img):
     selem = morphology.disk(25)
     white_paper_mask = skimage.morphology.closing(combined_mask, selem)
 
+    # Keep only the largest connected region to ignore noise
+    labeled = skimage.measure.label(white_paper_mask)
+    if labeled.max() > 0:
+        largest_region = (labeled == np.argmax(np.bincount(labeled.flat)[1:]) + 1)
+        white_paper_mask = largest_region
+
     # Fill any remaining holes completely
     white_paper_mask = morphology.remove_small_holes(white_paper_mask, max_size=50000)
 
@@ -383,6 +389,12 @@ def detect_hand(img):
 
 '''
 hand_mask = detect_hand(img_base)
+
+since it's working great around the edges of the hand,
+we can detect the circles normally on the paper
+we can detect the hand
+do the homography on the original image (not just the paper)
+readd the hand on top of the homography result, using the mask we created for it
 
 # Don't draw fennec where the hand is
 mask_homography = (fennec_homographie[:, :, 0] != 0) & ~hand_mask
